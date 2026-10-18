@@ -263,3 +263,14 @@ tbody tr:hover {
     flex-direction: column;
   }
 }
+
+
+.status-badge.online {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+
+.status-badge.offline {
+  background: #7f1d1d;
+  color: #fca5a5;
+}

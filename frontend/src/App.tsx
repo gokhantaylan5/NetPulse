@@ -1,4 +1,4 @@
-
+import TargetStatus from './components/TargetStatus'
 import { useEffect, useState } from 'react'
 import './App.css'
 
@@ -153,9 +153,7 @@ function App() {
                         {target.address}
                       </td>
                       <td>
-                        <span className="status-badge">
-                          Not monitored
-                        </span>
+                         <TargetStatus targetId={target.id} />
                       </td>
                       <td>{target.created_at}</td>
                     </tr>
