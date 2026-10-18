@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import IPvAnyAddress
 from app.monitoring.ping import measure_ping
-
+from app.monitoring.network import detect_networks
 
 
 @asynccontextmanager
@@ -77,3 +77,9 @@ def create_target(target: TargetCreate):
 @app.get("/api/targets")
 def list_targets():
     return get_targets(db_path=DB_PATH)
+
+
+
+@app.get("/api/network/interfaces")
+def list_network_interfaces():
+    return detect_networks()
