@@ -126,3 +126,95 @@ def test_scheduler_saves_measurement(tmp_path):
         ).fetchone()
 
     assert row == (target_id, 1, 12.5)
+
+
+
+def test_scheduler_continues_after_ping_error():
+    targets = [
+        {"id": 1, "address": "192.168.1.1"},
+        {"id": 2, "address": "8.8.8.8"}
+    ]
+
+    checked = []
+
+    def fake_ping(host):
+        checked.append(host)
+
+        if host == "192.168.1.1":
+            raise OSError("Ping execution failed")
+
+        return PingResult(host, True, 12.0)
+
+    scheduler = MonitoringScheduler(
+        target_provider=lambda: targets,
+        ping_fn=fake_ping
+    )
+
+    results = scheduler.run_once()
+
+    assert checked == ["192.168.1.1", "8.8.8.8"]
+    assert len(results) == 1
+    assert results[0].host == "8.8.8.8"
+
+
+def test_scheduler_continues_after_database_error():
+    targets = [
+        {"id": 1, "address": "192.168.1.1"},
+        {"id": 2, "address": "8.8.8.8"}
+    ]
+
+    saved = []
+
+    def fake_ping(host):
+        return PingResult(host, True, 10.0)
+
+    def fake_writer(target_id, reachable, latency):
+        if target_id == 1:
+            raise sqlite3.OperationalError("Database locked")
+
+        saved.append(target_id)
+        return target_id
+
+    scheduler = MonitoringScheduler(
+        target_provider=lambda: targets,
+        ping_fn=fake_ping,
+        measurement_writer=fake_writer
+    )
+
+    results = scheduler.run_once()
+
+    assert len(results) == 2
+    assert saved == [2]
+
+
+def test_scheduler_recovers_after_target_provider_error():
+    stop_event = Event()
+    attempts = [0]
+    received = []
+
+    def fake_provider():
+        attempts[0] += 1
+
+        if attempts[0] == 1:
+            raise sqlite3.OperationalError("Database unavailable")
+
+        return [{"id": 1, "address": "8.8.8.8"}]
+
+    def fake_ping(host):
+        return PingResult(host, True, 15.0)
+
+    def on_results(results):
+        received.extend(results)
+        stop_event.set()
+
+    scheduler = MonitoringScheduler(
+        interval_seconds=0.01,
+        target_provider=fake_provider,
+        ping_fn=fake_ping
+    )
+
+    scheduler.run(stop_event, on_results)
+
+    assert attempts[0] == 2
+    assert len(received) == 1
+    assert received[0].host == "8.8.8.8"

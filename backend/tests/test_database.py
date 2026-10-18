@@ -127,3 +127,34 @@ def test_get_measurements(tmp_path):
     assert measurements[0]["latency_ms"] == 15.0
     assert measurements[1]["latency_ms"] == 12.0
     assert measurements[0]["target_id"] == target_id
+
+
+
+def test_measurement_foreign_key(tmp_path):
+    db_path = tmp_path / "test.db"
+    init_db(db_path)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        add_measurement(
+            target_id=999,
+            reachable=True,
+            latency_ms=12.0,
+            db_path=db_path
+        )
+
+
+def test_measurements_index_created(tmp_path):
+    db_path = tmp_path / "test.db"
+    init_db(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        indexes = conn.execute(
+            "PRAGMA index_list('measurements')"
+        ).fetchall()
+
+    index_names = [row[1] for row in indexes]
+
+    assert (
+        "idx_measurements_target_id_id"
+        in index_names
+    )

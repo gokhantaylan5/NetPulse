@@ -1,4 +1,4 @@
-
+from contextlib import contextmanager
 import sqlite3
 from pathlib import Path
 
@@ -6,11 +6,26 @@ from pathlib import Path
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "netpulse.db"
 
 
+@contextmanager
+def db_connection(db_path: Path):
+    conn = sqlite3.connect(db_path, timeout=5)
+
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+        with conn:
+            yield conn
+
+    finally:
+        conn.close()
+
+
+
 
 def init_db(db_path: Path = DB_PATH):
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(db_path) as conn:
+    with db_connection(db_path) as conn:
         # Registered network targets
         conn.execute("""
             CREATE TABLE IF NOT EXISTS targets (
@@ -36,9 +51,17 @@ def init_db(db_path: Path = DB_PATH):
         """)
 
 
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS
+                idx_measurements_target_id_id
+            ON measurements(target_id, id DESC)
+        """)
+
+
+
 
 def add_target(name: str, address: str, db_path: Path = DB_PATH) -> int:
-    with sqlite3.connect(db_path) as conn:
+    with db_connection(db_path) as conn:
         cursor = conn.execute(
             """
             INSERT INTO targets (name, address)
@@ -52,7 +75,7 @@ def add_target(name: str, address: str, db_path: Path = DB_PATH) -> int:
 
 
 def get_targets(db_path: Path = DB_PATH) -> list[dict]:
-    with sqlite3.connect(db_path) as conn:
+    with db_connection(db_path) as conn:
         conn.row_factory = sqlite3.Row
 
         cursor = conn.execute(
@@ -74,7 +97,7 @@ def add_measurement(
     db_path: Path = DB_PATH
 ) -> int:
 
-    with sqlite3.connect(db_path) as conn:
+    with db_connection(db_path) as conn:
         cursor = conn.execute(
             """
             INSERT INTO measurements (
@@ -104,7 +127,7 @@ def get_measurements(
     if not 1 <= limit <= 1000:
         raise ValueError("Limit must be between 1 and 1000.")
 
-    with sqlite3.connect(db_path) as conn:
+    with db_connection(db_path) as conn:
         conn.row_factory = sqlite3.Row
 
         cursor = conn.execute(
