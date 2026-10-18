@@ -1,4 +1,5 @@
 import sqlite3
+import ipaddress
 from app.database import DB_PATH, init_db, add_target, get_targets
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
@@ -7,6 +8,8 @@ from fastapi import FastAPI
 from pydantic import IPvAnyAddress
 from app.monitoring.ping import measure_ping
 from app.monitoring.network import detect_networks
+from fastapi import Query, Path
+from app.database import get_measurements
 
 
 @asynccontextmanager
@@ -83,3 +86,91 @@ def list_targets():
 @app.get("/api/network/interfaces")
 def list_network_interfaces():
     return detect_networks()
+
+
+from app.monitoring.discovery import (
+    discover_hosts,
+    MAX_ADDRESSES,
+    PRIVATE_NETWORKS,
+)
+
+
+class NetworkScanRequest(BaseModel):
+    network: str = Field(min_length=1, max_length=43)
+
+
+@app.post("/api/network/discover")
+def scan_network(request: NetworkScanRequest):
+    try:
+        network = ipaddress.ip_network(
+            request.network,
+            strict=True
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid network CIDR."
+        ) from exc
+
+    if not isinstance(network, ipaddress.IPv4Network):
+        raise HTTPException(
+            status_code=422,
+            detail="Only IPv4 networks are supported."
+        )
+
+    if network.num_addresses > MAX_ADDRESSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Network exceeds scan size limit."
+        )
+
+    if not any(
+        network.subnet_of(private)
+        for private in PRIVATE_NETWORKS
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only private networks can be scanned."
+        )
+
+    interfaces = detect_networks()
+
+    allowed = any(
+        network.subnet_of(
+            ipaddress.ip_network(item["network"])
+        )
+        for item in interfaces
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Network is not on an active local interface."
+        )
+
+    results = discover_hosts(str(network))
+
+    return {
+        "network": str(network),
+        "discovered_count": len(results),
+        "devices": [
+            {
+                "ip": result.host,
+                "reachable": result.reachable,
+                "latency_ms": result.latency_ms
+            }
+            for result in results
+        ]
+    }
+
+
+@app.get("/api/targets/{target_id}/measurements")
+def list_target_measurements(
+    target_id: int = Path(gt=0),
+    limit: int = Query(default=100, ge=1, le=1000)
+):
+    return get_measurements(
+        target_id=target_id,
+        limit=limit,
+        db_path=DB_PATH
+    )
