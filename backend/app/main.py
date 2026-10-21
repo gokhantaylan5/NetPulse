@@ -10,7 +10,8 @@ from app.monitoring.ping import measure_ping
 from app.monitoring.network import detect_networks
 from fastapi import Query, Path
 from app.database import get_measurements
-
+from app.database import get_monitoring_summary
+from app.database import delete_target
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -174,3 +175,28 @@ def list_target_measurements(
         limit=limit,
         db_path=DB_PATH
     )
+
+
+@app.get("/api/monitor/summary")
+def monitoring_summary():
+    return get_monitoring_summary(
+        db_path=DB_PATH
+    )
+
+
+
+@app.delete(
+    "/api/targets/{target_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+def remove_target(target_id: int = Path(gt=0)):
+    deleted = delete_target(
+        target_id=target_id,
+        db_path=DB_PATH
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Target not found."
+        )

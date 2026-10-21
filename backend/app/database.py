@@ -143,3 +143,103 @@ def get_measurements(
         )
 
         return [dict(row) for row in cursor.fetchall()]
+
+
+
+def get_monitoring_summary(
+    db_path: Path = DB_PATH
+) -> dict:
+    """
+    Calculate monitoring statistics using the latest
+    measurement for each registered target.
+
+    Measurements older than 45 seconds are considered stale.
+    """
+
+    with db_connection(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+
+        row = conn.execute("""
+            SELECT
+                COUNT(*) AS total_targets,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN m.timestamp >= datetime('now', '-45 seconds')
+                             AND m.timestamp <= CURRENT_TIMESTAMP
+                             AND m.reachable = 1
+                        THEN 1 ELSE 0
+                    END
+                ), 0) AS online_devices,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN m.timestamp >= datetime('now', '-45 seconds')
+                             AND m.timestamp <= CURRENT_TIMESTAMP
+                             AND m.reachable = 0
+                        THEN 1 ELSE 0
+                    END
+                ), 0) AS offline_devices,
+
+                ROUND(AVG(
+                    CASE
+                        WHEN m.timestamp >= datetime('now', '-45 seconds')
+                             AND m.timestamp <= CURRENT_TIMESTAMP
+                             AND m.reachable = 1
+                        THEN m.latency_ms
+                    END
+                ), 1) AS average_latency_ms
+
+            FROM targets t
+
+            LEFT JOIN measurements m
+                ON m.id = (
+                    SELECT id
+                    FROM measurements
+                    WHERE target_id = t.id
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+        """).fetchone()
+
+        result = dict(row)
+
+        result["unknown_devices"] = (
+            result["total_targets"]
+            - result["online_devices"]
+            - result["offline_devices"]
+        )
+
+        return result
+
+
+def delete_target(
+    target_id: int,
+    db_path: Path = DB_PATH
+) -> bool:
+    """
+    Delete a registered target and its measurement history.
+
+    Returns True if deleted, False if target does not exist.
+    """
+
+    with db_connection(db_path) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM targets WHERE id = ?",
+            (target_id,)
+        ).fetchone()
+
+        if exists is None:
+            return False
+
+        conn.execute(
+            "DELETE FROM measurements WHERE target_id = ?",
+            (target_id,)
+        )
+
+        conn.execute(
+            "DELETE FROM targets WHERE id = ?",
+            (target_id,)
+        )
+
+        return True

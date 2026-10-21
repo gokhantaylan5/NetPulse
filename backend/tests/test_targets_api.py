@@ -93,3 +93,40 @@ def test_get_targets_with_data(tmp_path):
     assert targets[0]["address"] == "192.168.1.1"
     assert targets[0]["id"] == 1
     assert "created_at" in targets[0]
+
+
+
+def test_delete_target_api(tmp_path):
+    db_path = tmp_path / "test.db"
+    init_db(db_path)
+
+    with patch("app.main.DB_PATH", db_path):
+        created = client.post(
+            "/api/targets",
+            json={
+                "name": "Fake Device",
+                "address": "192.168.1.50"
+            }
+        )
+
+        target_id = created.json()["id"]
+
+        response = client.delete(
+            f"/api/targets/{target_id}"
+        )
+
+        remaining = client.get("/api/targets")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert remaining.json() == []
+
+
+def test_delete_nonexistent_target(tmp_path):
+    db_path = tmp_path / "test.db"
+    init_db(db_path)
+
+    with patch("app.main.DB_PATH", db_path):
+        response = client.delete("/api/targets/999")
+
+    assert response.status_code == 404

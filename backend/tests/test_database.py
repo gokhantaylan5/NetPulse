@@ -6,6 +6,7 @@ from app.database import init_db
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app.main import app
+from app.database import get_monitoring_summary, db_connection
 
 
 def test_database_initialization(tmp_path):
@@ -158,3 +159,88 @@ def test_measurements_index_created(tmp_path):
         "idx_measurements_target_id_id"
         in index_names
     )
+
+
+def test_monitoring_summary(tmp_path):
+    db_path = tmp_path / "summary_test.db"
+    init_db(db_path)
+
+    router_id = add_target("Router", "192.168.1.1", db_path)
+    dns_id = add_target("Google DNS", "8.8.8.8", db_path)
+    local_id = add_target("Local", "127.0.0.1", db_path)
+    add_target("Unknown", "192.168.1.50", db_path)
+
+    # Router was previously online but is now offline.
+    add_measurement(router_id, True, 5.0, db_path)
+    add_measurement(router_id, False, None, db_path)
+
+    add_measurement(dns_id, True, 20.0, db_path)
+    add_measurement(local_id, True, None, db_path)
+
+    summary = get_monitoring_summary(db_path)
+
+    assert summary["total_targets"] == 4
+    assert summary["online_devices"] == 2
+    assert summary["offline_devices"] == 1
+    assert summary["unknown_devices"] == 1
+    assert summary["average_latency_ms"] == 20.0
+
+
+def test_monitoring_summary_ignores_stale_data(tmp_path):
+    db_path = tmp_path / "stale_test.db"
+    init_db(db_path)
+
+    target_id = add_target(
+        "Google DNS", "8.8.8.8", db_path
+    )
+
+    add_measurement(target_id, True, 12.0, db_path)
+
+    # Simulate an old measurement.
+    with db_connection(db_path) as conn:
+        conn.execute("""
+            UPDATE measurements
+            SET timestamp = datetime('now', '-2 minutes')
+            WHERE target_id = ?
+        """, (target_id,))
+
+    summary = get_monitoring_summary(db_path)
+
+    assert summary["total_targets"] == 1
+    assert summary["online_devices"] == 0
+    assert summary["offline_devices"] == 0
+    assert summary["unknown_devices"] == 1
+    assert summary["average_latency_ms"] is None
+
+
+
+def test_delete_target_and_measurements(tmp_path):
+    from app.database import delete_target
+
+    db_path = tmp_path / "delete_test.db"
+    init_db(db_path)
+
+    target_id = add_target(
+        "Test Device",
+        "192.168.1.50",
+        db_path
+    )
+
+    add_measurement(
+        target_id,
+        True,
+        12.0,
+        db_path
+    )
+
+    assert delete_target(target_id, db_path) is True
+
+    assert get_targets(db_path) == []
+
+    with sqlite3.connect(db_path) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM measurements"
+        ).fetchone()[0]
+
+    assert count == 0
+    assert delete_target(target_id, db_path) is False
