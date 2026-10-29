@@ -58,6 +58,46 @@ def init_db(db_path: Path = DB_PATH):
         """)
 
 
+        # Network availability incidents
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT,
+
+                FOREIGN KEY (target_id)
+                    REFERENCES targets(id)
+                    ON DELETE CASCADE,
+
+                CHECK (status IN ('open', 'resolved')),
+
+                CHECK (
+                    (status = 'open' AND resolved_at IS NULL)
+                    OR
+                    (status = 'resolved' AND resolved_at IS NOT NULL)
+                )
+            )
+        """)
+
+        # Only one open incident per target.
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                idx_incidents_one_open_per_target
+            ON incidents(target_id)
+            WHERE status = 'open'
+        """)
+
+        # Speed up incident history queries.
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS
+                idx_incidents_status_opened
+            ON incidents(status, opened_at DESC)
+        """)
+
+
+
 
 
 def add_target(name: str, address: str, db_path: Path = DB_PATH) -> int:
@@ -243,3 +283,201 @@ def delete_target(
         )
 
         return True
+
+
+
+def open_incident(
+    target_id: int,
+    db_path: Path = DB_PATH
+) -> int:
+    """
+    Open an incident for a target.
+
+    If an open incident already exists, return its ID.
+    """
+
+    with db_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO incidents (target_id, status)
+            VALUES (?, 'open')
+            ON CONFLICT DO NOTHING
+            """,
+            (target_id,)
+        )
+
+        row = conn.execute(
+            """
+            SELECT id
+            FROM incidents
+            WHERE target_id = ?
+              AND status = 'open'
+            """,
+            (target_id,)
+        ).fetchone()
+
+        if row is None:
+            raise RuntimeError(
+                "Failed to retrieve open incident."
+            )
+
+        return int(row[0])
+
+
+def resolve_incident(
+    target_id: int,
+    db_path: Path = DB_PATH
+) -> bool:
+    """
+    Resolve the open incident for a target.
+
+    Returns True if an incident was resolved.
+    Returns False if no open incident exists.
+    """
+
+    with db_connection(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE incidents
+            SET status = 'resolved',
+                resolved_at = CURRENT_TIMESTAMP
+            WHERE target_id = ?
+              AND status = 'open'
+            """,
+            (target_id,)
+        )
+
+        return cursor.rowcount > 0
+
+
+def get_incidents(
+    status: str | None = None,
+    db_path: Path = DB_PATH
+) -> list[dict]:
+    """
+    Retrieve incidents with target information.
+
+    status:
+        None       -> all incidents
+        'open'     -> active incidents
+        'resolved' -> resolved incidents
+    """
+
+    if status not in (None, 'open', 'resolved'):
+        raise ValueError("Invalid incident status.")
+
+    with db_connection(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+
+        query = """
+            SELECT
+                i.id,
+                i.target_id,
+                t.name AS target_name,
+                t.address AS target_address,
+                i.status,
+                i.opened_at,
+                i.resolved_at
+            FROM incidents i
+            JOIN targets t
+                ON t.id = i.target_id
+        """
+
+        parameters = ()
+
+        if status is not None:
+            query += " WHERE i.status = ?"
+            parameters = (status,)
+
+        query += " ORDER BY i.opened_at DESC, i.id DESC"
+
+        rows = conn.execute(
+            query,
+            parameters
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+
+def record_monitoring_result(
+    target_id: int,
+    reachable: bool,
+    latency_ms: float | None,
+    db_path: Path = DB_PATH
+) -> int:
+    """
+    Save a monitoring result and update its incident state.
+
+    Rules:
+    - 3 consecutive failed measurements open an incident.
+    - Further failures keep the existing incident open.
+    - A successful measurement resolves an open incident.
+
+    The measurement and incident update are atomic.
+    """
+
+    with db_connection(db_path) as conn:
+
+        # 1. Save the measurement.
+        cursor = conn.execute(
+            """
+            INSERT INTO measurements (
+                target_id,
+                reachable,
+                latency_ms
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                target_id,
+                int(reachable),
+                latency_ms
+            )
+        )
+
+        measurement_id = cursor.lastrowid
+
+        # 2. Successful ping: resolve any open incident.
+        if reachable:
+            conn.execute(
+                """
+                UPDATE incidents
+                SET status = 'resolved',
+                    resolved_at = CURRENT_TIMESTAMP
+                WHERE target_id = ?
+                  AND status = 'open'
+                """,
+                (target_id,)
+            )
+
+        else:
+            # 3. Check the last three recorded results.
+            recent = conn.execute(
+                """
+                SELECT reachable
+                FROM measurements
+                WHERE target_id = ?
+                ORDER BY id DESC
+                LIMIT 3
+                """,
+                (target_id,)
+            ).fetchall()
+
+            # 4. Open an incident after three failures.
+            if (
+                len(recent) == 3
+                and all(row[0] == 0 for row in recent)
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO incidents (
+                        target_id,
+                        status
+                    )
+                    VALUES (?, 'open')
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (target_id,)
+                )
+
+        return int(measurement_id)

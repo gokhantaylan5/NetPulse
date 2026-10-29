@@ -2,7 +2,11 @@
 from threading import Event
 from unittest.mock import patch
 
-from app.database import DB_PATH, add_measurement
+from app.database import (
+    DB_PATH,
+    record_monitoring_result
+)
+
 from app.monitoring import worker
 
 
@@ -23,7 +27,7 @@ def test_worker_initializes_and_starts_scheduler():
 
     mock_scheduler.assert_called_once_with(
         interval_seconds=10.0,
-        measurement_writer=add_measurement
+        measurement_writer=record_monitoring_result
     )
 
     call_args = mock_scheduler.return_value.run.call_args
@@ -41,8 +45,11 @@ def test_worker_shutdown_signal():
             "app.monitoring.worker.run_worker"
         ) as mock_run_worker
     ):
+
         def simulate_worker(stop_event):
-            shutdown_handler = mock_signal.call_args_list[0].args[1]
+            shutdown_handler = (
+                mock_signal.call_args_list[0].args[1]
+            )
 
             shutdown_handler(signal_number, None)
 

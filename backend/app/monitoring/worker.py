@@ -4,7 +4,12 @@ import signal
 
 from threading import Event
 
-from app.database import DB_PATH, init_db, add_measurement
+from app.database import (
+    DB_PATH,
+    init_db,
+    record_monitoring_result
+)
+
 from app.monitoring.scheduler import MonitoringScheduler
 from app.monitoring.ping import PingResult
 
@@ -18,13 +23,16 @@ def run_worker(stop_event: Event) -> None:
     """
     Initialize the database and run the monitoring
     scheduler until a stop signal is received.
+
+    Monitoring results are saved and incident states
+    are updated through the same database transaction.
     """
 
     init_db(DB_PATH)
 
     scheduler = MonitoringScheduler(
         interval_seconds=MONITOR_INTERVAL,
-        measurement_writer=add_measurement
+        measurement_writer=record_monitoring_result
     )
 
     def on_results(results: list[PingResult]) -> None:
@@ -39,7 +47,10 @@ def run_worker(stop_event: Event) -> None:
             online_count
         )
 
-    logger.info("Monitoring worker started.")
+    logger.info(
+        "Monitoring worker started. "
+        "Automatic incident detection enabled."
+    )
 
     scheduler.run(
         stop_event=stop_event,

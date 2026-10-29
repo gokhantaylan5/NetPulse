@@ -12,6 +12,8 @@ from fastapi import Query, Path
 from app.database import get_measurements
 from app.database import get_monitoring_summary
 from app.database import delete_target
+from typing import Literal
+from app.database import get_incidents
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -200,3 +202,27 @@ def remove_target(target_id: int = Path(gt=0)):
             status_code=404,
             detail="Target not found."
         )
+
+
+
+@app.get("/api/incidents")
+def list_incidents(
+    status: Literal["open", "resolved"] | None = Query(
+        default=None,
+        description="Filter incidents by status."
+    )
+):
+    """
+    Retrieve network monitoring incidents.
+
+    Without a status parameter, return all incidents.
+
+    Supported filters:
+        open
+        resolved
+    """
+
+    return get_incidents(
+        status=status,
+        db_path=DB_PATH
+    )
