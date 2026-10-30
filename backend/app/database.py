@@ -350,20 +350,23 @@ def resolve_incident(
         return cursor.rowcount > 0
 
 
+
 def get_incidents(
     status: str | None = None,
     db_path: Path = DB_PATH
 ) -> list[dict]:
     """
-    Retrieve incidents with target information.
+    Retrieve monitoring incidents with duration.
 
-    status:
-        None       -> all incidents
-        'open'     -> active incidents
-        'resolved' -> resolved incidents
+    Duration is measured from incident opening:
+    - Open: opened_at -> current time
+    - Resolved: opened_at -> resolved_at
+
+    duration_seconds represents incident lifetime,
+    not necessarily the full network outage duration.
     """
 
-    if status not in (None, 'open', 'resolved'):
+    if status not in (None, "open", "resolved"):
         raise ValueError("Invalid incident status.")
 
     with db_connection(db_path) as conn:
@@ -377,8 +380,27 @@ def get_incidents(
                 t.address AS target_address,
                 i.status,
                 i.opened_at,
-                i.resolved_at
+                i.resolved_at,
+
+                CAST(
+                    MAX(
+                        0,
+                        ROUND(
+                            (
+                                julianday(
+                                    COALESCE(
+                                        i.resolved_at,
+                                        CURRENT_TIMESTAMP
+                                    )
+                                )
+                                - julianday(i.opened_at)
+                            ) * 86400
+                        )
+                    ) AS INTEGER
+                ) AS duration_seconds
+
             FROM incidents i
+
             JOIN targets t
                 ON t.id = i.target_id
         """
@@ -397,6 +419,7 @@ def get_incidents(
         ).fetchall()
 
         return [dict(row) for row in rows]
+
 
 
 def record_monitoring_result(

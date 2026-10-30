@@ -14,6 +14,7 @@ from app.database import get_monitoring_summary
 from app.database import delete_target
 from typing import Literal
 from app.database import get_incidents
+from app.monitoring.availability import get_target_availability
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -226,3 +227,29 @@ def list_incidents(
         status=status,
         db_path=DB_PATH
     )
+
+
+
+@app.get("/api/targets/{target_id}/availability")
+def target_availability(
+    target_id: int = Path(gt=0),
+    hours: int = Query(default=24, ge=1, le=168)
+):
+    """
+    Return monitoring check statistics and coverage
+    for a selected target and time window.
+    """
+
+    result = get_target_availability(
+        target_id=target_id,
+        hours=hours,
+        db_path=DB_PATH
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Target not found."
+        )
+
+    return result

@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 
 type IncidentStatus = 'open' | 'resolved'
@@ -11,6 +12,7 @@ interface Incident {
   status: IncidentStatus
   opened_at: string
   resolved_at: string | null
+  duration_seconds: number
 }
 
 interface Props {
@@ -22,16 +24,42 @@ const REFRESH_INTERVAL = 10_000
 function formatTimestamp(timestamp: string | null): string {
   if (!timestamp) return '—'
 
-  // SQLite's CURRENT_TIMESTAMP values are UTC.
   const normalized = timestamp.replace(' ', 'T')
+
   const utcTimestamp = /(?:Z|[+-]\d\d:\d\d)$/.test(normalized)
     ? normalized
     : `${normalized}Z`
+
   const date = new Date(utcTimestamp)
 
   return Number.isNaN(date.getTime())
     ? timestamp
     : date.toLocaleString('tr-TR')
+}
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return '—'
+  }
+
+  const total = Math.floor(seconds)
+
+  const days = Math.floor(total / 86400)
+  const hours = Math.floor((total % 86400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const remainingSeconds = total % 60
+
+  const parts: string[] = []
+
+  if (days > 0) parts.push(`${days}d`)
+  if (hours > 0) parts.push(`${hours}h`)
+  if (minutes > 0) parts.push(`${minutes}m`)
+
+  if (parts.length === 0 || remainingSeconds > 0) {
+    parts.push(`${remainingSeconds}s`)
+  }
+
+  return parts.join(' ')
 }
 
 function IncidentsPanel({ refreshKey }: Props) {
@@ -84,14 +112,24 @@ function IncidentsPanel({ refreshKey }: Props) {
     }
   }, [refreshKey])
 
-  const openCount = incidents.filter(item => item.status === 'open').length
-  const resolvedCount = incidents.filter(item => item.status === 'resolved').length
-  const visibleIncidents = filter === 'all'
-    ? incidents
-    : incidents.filter(item => item.status === filter)
+  const openCount = incidents.filter(
+    incident => incident.status === 'open'
+  ).length
+
+  const resolvedCount = incidents.filter(
+    incident => incident.status === 'resolved'
+  ).length
+
+  const visibleIncidents =
+    filter === 'all'
+      ? incidents
+      : incidents.filter(
+          incident => incident.status === filter
+        )
 
   return (
     <section className="targets-panel incidents-panel">
+
       <div className="panel-header incidents-header">
         <div>
           <h2>Network Incidents</h2>
@@ -99,31 +137,50 @@ function IncidentsPanel({ refreshKey }: Props) {
             Availability incidents · Auto-refresh every 10 seconds
           </p>
         </div>
+
         <span className="incident-open-counter">
           {error ? '—' : `${openCount} open`}
         </span>
       </div>
 
-      <div className="incident-tabs" role="group" aria-label="Filter incidents">
+      <div
+        className="incident-tabs"
+        role="group"
+        aria-label="Filter incidents"
+      >
         <button
           type="button"
-          className={filter === 'open' ? 'incident-tab selected' : 'incident-tab'}
+          className={
+            filter === 'open'
+              ? 'incident-tab selected'
+              : 'incident-tab'
+          }
           aria-pressed={filter === 'open'}
           onClick={() => setFilter('open')}
         >
           Open ({openCount})
         </button>
+
         <button
           type="button"
-          className={filter === 'resolved' ? 'incident-tab selected' : 'incident-tab'}
+          className={
+            filter === 'resolved'
+              ? 'incident-tab selected'
+              : 'incident-tab'
+          }
           aria-pressed={filter === 'resolved'}
           onClick={() => setFilter('resolved')}
         >
           Resolved ({resolvedCount})
         </button>
+
         <button
           type="button"
-          className={filter === 'all' ? 'incident-tab selected' : 'incident-tab'}
+          className={
+            filter === 'all'
+              ? 'incident-tab selected'
+              : 'incident-tab'
+          }
           aria-pressed={filter === 'all'}
           onClick={() => setFilter('all')}
         >
@@ -132,9 +189,13 @@ function IncidentsPanel({ refreshKey }: Props) {
       </div>
 
       {loading ? (
-        <p className="empty-state">Loading incidents...</p>
+        <p className="empty-state">
+          Loading incidents...
+        </p>
       ) : error ? (
-        <div className="error-message" role="alert">{error}</div>
+        <div className="error-message" role="alert">
+          {error}
+        </div>
       ) : visibleIncidents.length === 0 ? (
         <p className="empty-state">
           {filter === 'open'
@@ -150,24 +211,52 @@ function IncidentsPanel({ refreshKey }: Props) {
               <tr>
                 <th>Device</th>
                 <th>Status</th>
+                <th>Duration</th>
                 <th>Opened At</th>
                 <th>Resolved At</th>
               </tr>
             </thead>
+
             <tbody>
               {visibleIncidents.map(incident => (
                 <tr key={incident.id}>
                   <td>
-                    <div className="device-name">{incident.target_name}</div>
-                    <div className="ip-address">{incident.target_address}</div>
+                    <div className="device-name">
+                      {incident.target_name}
+                    </div>
+
+                    <div className="ip-address">
+                      {incident.target_address}
+                    </div>
                   </td>
+
                   <td>
-                    <span className={`incident-status ${incident.status}`}>
-                      {incident.status === 'open' ? 'OPEN' : 'RESOLVED'}
+                    <span
+                      className={
+                        `incident-status ${incident.status}`
+                      }
+                    >
+                      {incident.status === 'open'
+                        ? 'OPEN'
+                        : 'RESOLVED'}
                     </span>
                   </td>
-                  <td>{formatTimestamp(incident.opened_at)}</td>
-                  <td>{formatTimestamp(incident.resolved_at)}</td>
+
+                  <td>
+                    <span className="incident-duration">
+                      {formatDuration(
+                        incident.duration_seconds
+                      )}
+                    </span>
+                  </td>
+
+                  <td>
+                    {formatTimestamp(incident.opened_at)}
+                  </td>
+
+                  <td>
+                    {formatTimestamp(incident.resolved_at)}
+                  </td>
                 </tr>
               ))}
             </tbody>
