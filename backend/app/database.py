@@ -477,7 +477,9 @@ def record_monitoring_result(
             # 3. Check the last three recorded results.
             recent = conn.execute(
                 """
-                SELECT reachable
+                SELECT
+                    reachable,
+                    CAST(strftime('%s', timestamp) AS INTEGER)
                 FROM measurements
                 WHERE target_id = ?
                 ORDER BY id DESC
@@ -486,11 +488,29 @@ def record_monitoring_result(
                 (target_id,)
             ).fetchall()
 
-            # 4. Open an incident after three failures.
-            if (
+            # 4. Require three failures with no stale gaps.
+            max_failure_gap_seconds = 30
+
+            three_failures = (
                 len(recent) == 3
                 and all(row[0] == 0 for row in recent)
-            ):
+            )
+
+            timestamps_valid = (
+                len(recent) == 3
+                and all(row[1] is not None for row in recent)
+            )
+
+            continuous_failure_streak = (
+                timestamps_valid
+                and all(
+                    0 <= recent[i][1] - recent[i + 1][1]
+                    <= max_failure_gap_seconds
+                    for i in range(2)
+                )
+            )
+
+            if three_failures and continuous_failure_streak:
                 conn.execute(
                     """
                     INSERT INTO incidents (

@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import {
   CartesianGrid,
@@ -8,6 +7,7 @@ import {
   XAxis,
   YAxis
 } from 'recharts'
+import AvailabilityAnalytics from './AvailabilityAnalytics'
 
 interface Measurement {
   id: number
@@ -126,7 +126,7 @@ function LatencyHistory({
           : null
     }))
 
-  // Monitoring statistics.
+  // Monitoring statistics for the latest 100 measurements.
   const totalChecks = measurements.length
 
   const successfulCount = measurements.filter(
@@ -179,14 +179,11 @@ function LatencyHistory({
 
   return (
     <section className="targets-panel history-panel">
-
       {/* Header */}
       <div className="panel-header history-header">
         <div>
           <h2>Latency History — {targetName}</h2>
-          <p>
-            Last 100 measurements · Auto-refresh every 10s
-          </p>
+          <p>Last 100 measurements · Auto-refresh every 10s</p>
         </div>
 
         <button
@@ -197,6 +194,12 @@ function LatencyHistory({
           Close
         </button>
       </div>
+
+      {/* Availability has its own time range and fetch cycle. */}
+      <AvailabilityAnalytics
+        targetId={targetId}
+        refreshKey={refreshKey}
+      />
 
       {/* Loading */}
       {loading && (
@@ -222,24 +225,22 @@ function LatencyHistory({
       {/* Measurements */}
       {!loading && !error && totalChecks > 0 && (
         <>
-
           {/* Measurement information */}
           <div className="history-meta">
-            <span>{totalChecks} measurements</span>
+            <span>{totalChecks} measurements (latest 100)</span>
             <span>{offlineCount} offline checks</span>
             <span>{missingLatencyCount} without latency</span>
           </div>
 
-          {/* Performance statistics */}
+          {/* Performance statistics: latest 100 measurements only */}
           <div className="performance-grid">
-
             <div className="performance-card">
               <p>Average Latency</p>
               <h3>{formatLatency(averageLatency)}</h3>
             </div>
 
             <div className="performance-card">
-              <p>Successful Checks</p>
+              <p>Successful Checks (Last 100)</p>
               <h3>
                 {successfulChecks === null
                   ? '—'
@@ -256,13 +257,11 @@ function LatencyHistory({
               <p>Maximum Latency</p>
               <h3>{formatLatency(maxLatency)}</h3>
             </div>
-
           </div>
 
-          {/* Latency chart */}
+          {/* Latency chart: latest 100 measurements only */}
           {hasLatencyData ? (
             <div className="history-chart">
-
               <LineChart
                 data={chartData}
                 responsive
@@ -277,7 +276,6 @@ function LatencyHistory({
                   left: 0
                 }}
               >
-
                 <CartesianGrid
                   stroke="#263244"
                   strokeDasharray="3 3"
@@ -340,20 +338,15 @@ function LatencyHistory({
                   connectNulls={false}
                   isAnimationActive={false}
                 />
-
               </LineChart>
-
             </div>
           ) : (
             <p className="empty-state">
-              Measurements exist, but no numeric latency
-              values are available.
+              Measurements exist, but no numeric latency values are available.
             </p>
           )}
-
         </>
       )}
-
     </section>
   )
 }

@@ -603,3 +603,131 @@ tbody tr:hover {
   background: #064e3b;
   color: #6ee7b7;
 }
+
+/* Stage 11.6 — Availability Analytics (append to frontend/src/App.css) */
+.availability-section {
+  padding: 24px;
+  border-bottom: 1px solid #263244;
+}
+
+.availability-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.availability-heading h3 {
+  color: #f1f5f9;
+  font-size: 16px;
+  margin: 0 0 7px;
+}
+
+.availability-heading p {
+  color: #94a3b8;
+  font-size: 12px;
+  margin: 0;
+}
+
+.availability-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.availability-period {
+  padding: 9px 12px;
+  color: #94a3b8;
+  background: #182334;
+  border: 1px solid #334155;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.availability-period:hover:not(.selected) {
+  background: #263244;
+}
+
+.availability-period.selected {
+  color: #7dd3fc;
+  background: #1e3a50;
+  border-color: #0284c7;
+}
+
+.availability-period:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+.availability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.availability-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 17px;
+  background: #0b1120;
+  border: 1px solid #263244;
+  border-radius: 9px;
+}
+
+.availability-card p {
+  color: #94a3b8;
+  font-size: 12px;
+  margin: 0;
+}
+
+.availability-card strong {
+  color: #f1f5f9;
+  font-size: clamp(17px, 2vw, 23px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.availability-card span {
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.availability-note {
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 15px 0 0;
+}
+
+.availability-message,
+.availability-error {
+  margin: 4px 0 0;
+  padding: 12px 0;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.availability-error {
+  color: #fca5a5;
+}
+
+@media (max-width: 1050px) {
+  .availability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .availability-section { padding: 18px; }
+  .availability-grid { grid-template-columns: 1fr; }
+  .availability-periods { width: 100%; }
+  .availability-period { flex: 1; }
+}
