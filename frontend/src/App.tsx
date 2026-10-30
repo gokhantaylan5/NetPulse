@@ -1,9 +1,9 @@
-
 import { useEffect, useState, type FormEvent } from 'react'
 import TargetStatus from './components/TargetStatus'
 import LatencyHistory from './components/LatencyHistory'
-import './App.css'
 import NetworkDiscovery from './components/NetworkDiscovery'
+import IncidentsPanel from './components/IncidentsPanel'
+import './App.css'
 
 interface Target {
   id: number
@@ -21,33 +21,24 @@ interface MonitoringSummary {
 }
 
 function App() {
-  // Registered targets
   const [targets, setTargets] = useState<Target[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Monitoring statistics
-  const [summary, setSummary] =
-    useState<MonitoringSummary | null>(null)
+  const [summary, setSummary] = useState<MonitoringSummary | null>(null)
   const [summaryError, setSummaryError] = useState(false)
 
-  // Latency history selection
-  const [selectedTargetId, setSelectedTargetId] =
-    useState<number | null>(null)
+  const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
 
-  // Target management
   const [newName, setNewName] = useState('')
   const [newAddress, setNewAddress] = useState('')
   const [addingTarget, setAddingTarget] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [deletingTargetId, setDeletingTargetId] = useState<number | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  const [deletingTargetId, setDeletingTargetId] =
-    useState<number | null>(null)
-  const [deleteError, setDeleteError] =
-    useState<string | null>(null)
-
-  // Load registered targets
+  // Load registered targets.
   useEffect(() => {
     const controller = new AbortController()
 
@@ -65,7 +56,6 @@ function App() {
         }
 
         const data: Target[] = await response.json()
-
         if (!controller.signal.aborted) {
           setTargets(data)
         }
@@ -82,28 +72,24 @@ function App() {
     }
 
     void fetchTargets()
-
     return () => controller.abort()
   }, [refreshKey])
 
-  // Refresh monitoring summary every 10 seconds
+  // Refresh monitoring summary every 10 seconds.
   useEffect(() => {
     const controller = new AbortController()
 
     async function fetchSummary() {
       try {
-        const response = await fetch(
-          '/api/monitor/summary',
-          { signal: controller.signal }
-        )
+        const response = await fetch('/api/monitor/summary', {
+          signal: controller.signal
+        })
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
         }
 
-        const data: MonitoringSummary =
-          await response.json()
-
+        const data: MonitoringSummary = await response.json()
         if (!controller.signal.aborted) {
           setSummary(data)
           setSummaryError(false)
@@ -118,10 +104,7 @@ function App() {
     }
 
     void fetchSummary()
-
-    const interval = setInterval(() => {
-      void fetchSummary()
-    }, 10_000)
+    const interval = setInterval(() => void fetchSummary(), 10_000)
 
     return () => {
       clearInterval(interval)
@@ -129,12 +112,8 @@ function App() {
     }
   }, [refreshKey])
 
-  // Add a new monitoring target
-  async function handleAddTarget(
-    event: FormEvent<HTMLFormElement>
-  ) {
+  async function handleAddTarget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-
     if (addingTarget) return
 
     const name = newName.trim()
@@ -151,59 +130,37 @@ function App() {
     try {
       const response = await fetch('/api/targets', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name,
-          address
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, address })
       })
 
       if (!response.ok) {
         if (response.status === 409) {
-          throw new Error(
-            'This IP address is already registered.'
-          )
+          throw new Error('This IP address is already registered.')
         }
-
         if (response.status === 422) {
-          throw new Error(
-            'Please enter a valid IP address and device name.'
-          )
+          throw new Error('Please enter a valid IP address and device name.')
         }
-
-        throw new Error(
-          `Failed to add target (HTTP ${response.status}).`
-        )
+        throw new Error(`Failed to add target (HTTP ${response.status}).`)
       }
 
-      // Reset form after successful creation
       setNewName('')
       setNewAddress('')
-
-      // Reload targets and summary
       setRefreshKey(key => key + 1)
     } catch (err) {
-      setAddError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to add target.'
-      )
+      setAddError(err instanceof Error ? err.message : 'Failed to add target.')
     } finally {
       setAddingTarget(false)
     }
   }
 
-  // Delete a target and its history
   async function handleDeleteTarget(target: Target) {
     if (deletingTargetId !== null) return
 
     const confirmed = window.confirm(
       `Delete "${target.name}" (${target.address})?\n\n` +
-      'All measurement history for this target will also be ' +
-      'permanently deleted.\n\n' +
-      'This action cannot be undone.'
+      'All measurement and incident history for this target will also ' +
+      'be permanently deleted.\n\nThis action cannot be undone.'
     )
 
     if (!confirmed) return
@@ -212,42 +169,29 @@ function App() {
     setDeleteError(null)
 
     try {
-      const response = await fetch(
-        `/api/targets/${target.id}`,
-        { method: 'DELETE' }
-      )
+      const response = await fetch(`/api/targets/${target.id}`, {
+        method: 'DELETE'
+      })
 
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Target not found.')
         }
-
-        throw new Error(
-          `Failed to delete target (HTTP ${response.status}).`
-        )
+        throw new Error(`Failed to delete target (HTTP ${response.status}).`)
       }
 
-      // Close history if the selected target was deleted
       if (selectedTargetId === target.id) {
         setSelectedTargetId(null)
       }
-
-      // Reload targets and summary
       setRefreshKey(key => key + 1)
     } catch (err) {
-      setDeleteError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to delete target.'
-      )
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete target.')
     } finally {
       setDeletingTargetId(null)
     }
   }
 
-  const selectedTarget = targets.find(
-    target => target.id === selectedTargetId
-  )
+  const selectedTarget = targets.find(target => target.id === selectedTargetId)
 
   return (
     <div className="app-layout">
@@ -259,17 +203,11 @@ function App() {
 
         <nav className="navigation">
           <div className="nav-item active">Dashboard</div>
-          <div className="nav-item disabled">
-            Monitoring (Soon)
-          </div>
-          <div className="nav-item disabled">
-            Settings (Soon)
-          </div>
+          <div className="nav-item disabled">Monitoring (Soon)</div>
+          <div className="nav-item disabled">Settings (Soon)</div>
         </nav>
 
-        <div className="sidebar-footer">
-          NetPulse v0.1.0
-        </div>
+        <div className="sidebar-footer">NetPulse v0.1.0</div>
       </aside>
 
       <main className="main-content">
@@ -277,9 +215,7 @@ function App() {
           <div>
             <p className="eyebrow">NETWORK OVERVIEW</p>
             <h1>Dashboard</h1>
-            <p className="subtitle">
-              Manage and monitor your network targets.
-            </p>
+            <p className="subtitle">Manage and monitor your network targets.</p>
           </div>
 
           <button
@@ -291,7 +227,6 @@ function App() {
           </button>
         </header>
 
-        {/* Monitoring statistics */}
         <section className="stats-grid">
           <div className="stat-card">
             <p>Total Targets</p>
@@ -326,38 +261,22 @@ function App() {
           </div>
         </section>
 
-        {/* Target management */}
         <section className="targets-panel">
           <div className="panel-header">
             <div>
               <h2>Monitored Targets</h2>
-              <p>
-                Add devices, manage targets and view latency history.
-              </p>
+              <p>Add devices, manage targets and view latency history.</p>
             </div>
-            <NetworkDiscovery
-            registeredAddresses={targets.map(target => target.address)}
-            onTargetAdded={() => setRefreshKey(key => key + 1)}
-            />
           </div>
 
-          {/* Add target form */}
-          <form
-            className="target-form"
-            onSubmit={handleAddTarget}
-          >
+          <form className="target-form" onSubmit={handleAddTarget}>
             <div className="target-field">
-              <label htmlFor="target-name">
-                Device Name
-              </label>
-
+              <label htmlFor="target-name">Device Name</label>
               <input
                 id="target-name"
                 type="text"
                 value={newName}
-                onChange={event =>
-                  setNewName(event.target.value)
-                }
+                onChange={event => setNewName(event.target.value)}
                 placeholder="e.g. Home Router"
                 maxLength={80}
                 required
@@ -365,17 +284,12 @@ function App() {
             </div>
 
             <div className="target-field">
-              <label htmlFor="target-address">
-                IP Address
-              </label>
-
+              <label htmlFor="target-address">IP Address</label>
               <input
                 id="target-address"
                 type="text"
                 value={newAddress}
-                onChange={event =>
-                  setNewAddress(event.target.value)
-                }
+                onChange={event => setNewAddress(event.target.value)}
                 placeholder="e.g. 192.168.1.1"
                 required
               />
@@ -391,32 +305,20 @@ function App() {
           </form>
 
           {addError && (
-            <div className="error-message" role="alert">
-              {addError}
-            </div>
+            <div className="error-message" role="alert">{addError}</div>
           )}
-
           {deleteError && (
-            <div className="error-message" role="alert">
-              {deleteError}
-            </div>
+            <div className="error-message" role="alert">{deleteError}</div>
           )}
-
           {error && (
-            <div className="error-message" role="alert">
-              {error}
-            </div>
+            <div className="error-message" role="alert">{error}</div>
           )}
 
-          {/* Target table */}
           {loading ? (
-            <p className="empty-state">
-              Loading targets...
-            </p>
+            <p className="empty-state">Loading targets...</p>
           ) : targets.length === 0 ? (
             <p className="empty-state">
-              No targets registered yet.
-              Add a device above to start monitoring.
+              No targets registered yet. Add a device above to start monitoring.
             </p>
           ) : (
             <div className="table-wrapper">
@@ -430,7 +332,6 @@ function App() {
                     <th>Actions</th>
                   </tr>
                 </thead>
-
                 <tbody>
                   {targets.map(target => (
                     <tr key={target.id}>
@@ -438,42 +339,24 @@ function App() {
                         <button
                           type="button"
                           className="device-select"
-                          aria-pressed={
-                            selectedTargetId === target.id
-                          }
-                          onClick={() =>
-                            setSelectedTargetId(target.id)
-                          }
+                          aria-pressed={selectedTargetId === target.id}
+                          onClick={() => setSelectedTargetId(target.id)}
                         >
                           {target.name}
                         </button>
                       </td>
-
-                      <td className="ip-address">
-                        {target.address}
-                      </td>
-
-                      <td>
-                        <TargetStatus
-                          targetId={target.id}
-                        />
-                      </td>
-
+                      <td className="ip-address">{target.address}</td>
+                      <td><TargetStatus targetId={target.id} /></td>
                       <td>{target.created_at}</td>
-
                       <td>
                         <button
                           type="button"
                           className="delete-target-button"
                           disabled={deletingTargetId !== null}
-                          onClick={() =>
-                            void handleDeleteTarget(target)
-                          }
+                          onClick={() => void handleDeleteTarget(target)}
                           aria-label={`Delete ${target.name}`}
                         >
-                          {deletingTargetId === target.id
-                            ? 'Deleting...'
-                            : 'Delete'}
+                          {deletingTargetId === target.id ? 'Deleting...' : 'Delete'}
                         </button>
                       </td>
                     </tr>
@@ -484,11 +367,13 @@ function App() {
           )}
         </section>
 
-        {/* Selected target's latency history */}
+        <IncidentsPanel refreshKey={refreshKey} />
+
         <NetworkDiscovery
           registeredAddresses={targets.map(target => target.address)}
           onTargetAdded={() => setRefreshKey(key => key + 1)}
         />
+
         {selectedTarget && (
           <LatencyHistory
             key={selectedTarget.id}

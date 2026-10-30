@@ -534,3 +534,72 @@ tbody tr:hover {
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* Network Incidents - append to frontend/src/App.css */
+.incidents-panel {
+  margin-top: 24px;
+}
+
+.incidents-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.incident-open-counter {
+  border: 1px solid #7f1d1d;
+  color: #fca5a5;
+  background: #451a1a;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.incident-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 24px;
+  border-bottom: 1px solid #263244;
+}
+
+.incident-tab {
+  border: 1px solid #334155;
+  background: #182334;
+  color: #94a3b8;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.incident-tab.selected {
+  background: #1e3a50;
+  color: #7dd3fc;
+  border-color: #0284c7;
+}
+
+.incident-tab:hover:not(.selected) {
+  background: #263244;
+}
+
+.incident-status {
+  display: inline-block;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.incident-status.open {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.incident-status.resolved {
+  background: #064e3b;
+  color: #6ee7b7;
+}
