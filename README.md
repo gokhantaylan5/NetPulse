@@ -1,119 +1,148 @@
 # NetPulse
 
-**A modular, self-hosted network monitoring dashboard built with FastAPI, React, and TypeScript.**
+**An agentless, self-hosted network monitoring and observability dashboard built with FastAPI, React, TypeScript, and SQLite.**
 
-NetPulse is a personal software engineering project focused on network monitoring, device management, and network discovery.
+NetPulse is a personal software engineering project for monitoring network reachability, exploring local networks, investigating outages, and understanding network performance through historical data. It is designed primarily for home labs and small networks, with an emphasis on transparent monitoring logic and practical network engineering.
 
-The goal is to develop a lightweight monitoring platform that can be used in home and small-office networks, while exploring networking concepts, backend development, and modern web technologies.
-
-> **Project Status:** Early development (v0.1.0). Core backend functionality and the initial dashboard are implemented. Automated device discovery and continuous monitoring are planned.
+> **Status:** Active development · **Version:** v0.1.0 · **Primary development platform:** Windows
+>
+> NetPulse is an educational prototype, not a production-ready monitoring or alerting service.
 
 ## Features
 
-### Currently Implemented
+### Network discovery and target management
 
-- **ICMP Ping Monitoring:** Check the reachability of IPv4/IPv6 targets using the Windows ping utility.
-- **Latency Extraction:** Parse response times from supported Windows ping output formats.
-- **Target Management:** Register and retrieve monitored targets through REST API endpoints.
-- **SQLite Storage:** Persist registered targets locally.
-- **Network Interface Detection:** Identify active IPv4 interfaces and calculate their private network ranges.
-- **Web Dashboard:** View registered targets through a React-based interface.
-- **Automated Backend Tests:** Unit and API tests using Pytest.
+- Detect active local IPv4 interfaces and their associated private subnets.
+- Scan an eligible local private IPv4 subnet for ICMP-responsive hosts.
+- Add discovered hosts to monitoring directly from the dashboard.
+- Register and delete monitoring targets with IP address validation and duplicate prevention.
+- Limit discovery to a connected local private subnet and at most 256 addresses per scan.
 
-### Planned Features
+### Continuous ICMP monitoring
 
-- Automatic local network device discovery
-- ARP-assisted device identification
-- Device selection and registration through the dashboard
-- Periodic background monitoring
-- Historical latency and availability measurements
-- Interactive monitoring charts
-- Packet loss and jitter statistics
-- Network outage alerts
-- SNMP-based monitoring for supported devices
-- Additional operating system support
+- Run a **separate monitoring worker** that periodically checks registered targets (10-second configured interval).
+- Record reachability, measured latency when available, and timestamps in SQLite.
+- Display **Online**, **Offline**, and **Unknown** states, treating measurements older than 45 seconds as stale.
+- View recent latency measurements in an interactive chart with minimum, maximum, average, and successful-check statistics.
+- Isolate individual ping and persistence errors so other targets can still be checked.
 
-## Tech Stack
+### Incident detection and history
 
-| Component | Technology |
+- Automatically open an incident after **three consecutive failed recorded checks** with no gap exceeding 30 seconds between adjacent failures.
+- Maintain at most one open incident per target; resolve it after a successful recorded check.
+- View **Open**, **Resolved**, and **All** incidents with timestamps and incident duration.
+- Preserve incident history in SQLite until its target is deleted.
+
+### Availability analytics
+
+- Query statistics over the last **1 hour**, **24 hours**, or **7 days**.
+- Compare successful and failed recorded checks.
+- Show **Check Success Rate**, **Measurement Coverage**, **Observed Time**, and **Unknown Time**.
+- Treat observation gaps longer than 30 seconds as unknown rather than assuming a host was online or offline.
+- Refresh dashboard data periodically without reloading the page.
+
+**Not implemented yet:** notifications, SNMP, TCP port checks, packet-loss/jitter reporting, worker heartbeat, and authentication. See the [Development Roadmap](#development-roadmap).
+
+## Technology stack
+
+| Layer | Technology |
 |---|---|
-| Backend | Python, FastAPI |
+| API | Python, FastAPI, Pydantic |
+| Monitoring | ICMP via Windows `ping`, Python scheduler and worker |
+| Network discovery | `psutil`, `ipaddress`, `ThreadPoolExecutor` |
+| Persistence | SQLite |
 | Frontend | React, TypeScript, Vite |
-| Database | SQLite |
-| Network Utilities | ICMP Ping, psutil, ipaddress |
-| Backend Testing | Pytest, HTTPX |
-| API Documentation | Swagger UI / OpenAPI |
+| Charts | Recharts |
+| Testing | Pytest, FastAPI TestClient / HTTPX |
+| API documentation | OpenAPI / Swagger UI |
 
-## Project Structure
+## Architecture
 
 ```text
-NetPulse/
-├── backend/
-│   ├── app/
-│   │   ├── monitoring/
-│   │   │   ├── ping.py
-│   │   │   └── network.py
-│   │   ├── database.py
-│   │   └── main.py
-│   └── tests/
-│
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── App.css
-│   │   └── index.css
-│   ├── package.json
-│   └── vite.config.ts
-│
-└── .gitignore
+                  +-------------------------+
+                  |   React / TypeScript    |
+                  |  Dashboard (Vite dev)   |
+                  +------------+------------+
+                               |
+                         /api requests
+                               |
+                  +------------v------------+
+                  |       FastAPI API        |
+                  | targets, scans, history, |
+                  | incidents, availability  |
+                  +------------+------------+
+                               |
+                               v
+                       +-------+-------+
+                       |    SQLite     |
+                       | targets       |
+                       | measurements  |
+                       | incidents     |
+                       +-------^-------+
+                               |
+                  +------------+------------+
+                  |  Monitoring Worker       |
+                  |  scheduler + ICMP ping   |
+                  |  incident state updates  |
+                  +------------+------------+
+                               |
+                               v
+                       Monitored devices
 ```
 
-## Getting Started
+The FastAPI server, monitoring worker, and frontend development server are **three separate processes**. Starting the API alone does **not** start periodic monitoring.
 
-The current development setup is designed for Windows.
+## Getting started (Windows)
 
 ### Prerequisites
 
-- Python 3.14
-- Node.js (LTS)
-- npm
+- Python 3.14 (current development environment)
+- Node.js and npm compatible with the project's Vite version
 - Git
+- Network access to devices you are authorized to monitor
 
-### 1. Clone the Repository
+### 1. Clone the repository
 
-```bash
+```powershell
 git clone https://github.com/gokhantaylan5/NetPulse.git
 cd NetPulse
 ```
 
-### 2. Set Up the Backend
+### 2. Install backend dependencies
 
-Open PowerShell:
+In **terminal 1**:
 
 ```powershell
 cd backend
-
 py -m venv .venv
-
 .\.venv\Scripts\python.exe -m pip install fastapi "uvicorn[standard]" pytest httpx psutil
 ```
 
-Start the FastAPI server:
+Start the API:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-The backend will be available at:
+- API: <http://127.0.0.1:8000>
+- Interactive API docs: <http://127.0.0.1:8000/docs>
 
-- API: http://127.0.0.1:8000
-- Swagger Documentation: http://127.0.0.1:8000/docs
+The backend initializes the SQLite database at `backend/data/netpulse.db` on startup.
 
-The SQLite database is automatically initialized when the application starts.
+### 3. Start the monitoring worker
 
-### 3. Set Up the Frontend
+In **terminal 2**, from the repository root:
 
-Open another terminal in the project root:
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m app.monitoring.worker
+```
+
+The worker runs periodic checks against registered targets and writes measurements and incident state changes to the same local SQLite database. Stop it with `Ctrl+C`.
+
+### 4. Start the frontend
+
+In **terminal 3**, from the repository root:
 
 ```powershell
 cd frontend
@@ -121,93 +150,190 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Open the development URL displayed in your terminal, typically:
+Open the Vite URL shown in the terminal (typically <http://localhost:5173>). The development server proxies `/api` requests to FastAPI at `http://127.0.0.1:8000`.
 
-http://localhost:5173
+### 5. Try NetPulse
 
-The Vite development server proxies `/api` requests to the FastAPI backend.
+1. Add a target by name and IP address, or choose a private network interface and run **Network Discovery**.
+2. Add a discovered responding host to monitoring.
+3. Keep the monitoring worker running and watch device status and latency history update.
+4. Select a target to view its latency chart and availability statistics.
+5. Open **Network Incidents** to inspect active and resolved monitoring incidents.
 
-## API Endpoints
+> **Tip:** For a local test, monitor a reachable device you control. ICMP requests may be blocked by a host firewall even when the host is otherwise available.
 
-| Method | Endpoint | Description |
+## API reference
+
+| Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/health` | Check backend health |
-| GET | `/api/monitor/ping` | Perform an on-demand ping check |
-| GET | `/api/targets` | List registered targets |
-| POST | `/api/targets` | Register a new target |
+| `GET` | `/api/health` | API health check (not worker health) |
+| `GET` | `/api/monitor/ping?host=8.8.8.8` | One on-demand ICMP measurement |
+| `GET` | `/api/targets` | List registered monitoring targets |
+| `POST` | `/api/targets` | Register a target |
+| `DELETE` | `/api/targets/{target_id}` | Delete a target and its history |
+| `GET` | `/api/targets/{target_id}/measurements?limit=100` | Recent measurements (limit: 1–1000) |
+| `GET` | `/api/monitor/summary` | Latest target-status summary |
+| `GET` | `/api/network/interfaces` | Eligible local private IPv4 interfaces |
+| `POST` | `/api/network/discover` | Scan a permitted local private IPv4 subnet |
+| `GET` | `/api/incidents` | List all incidents |
+| `GET` | `/api/incidents?status=open` | Filter active incidents (`resolved` is also accepted) |
+| `GET` | `/api/targets/{target_id}/availability?hours=24` | Availability analytics (1–168 hours) |
 
-### Example: Ping a Target
+**Example: register a target**
 
 ```http
-GET /api/monitor/ping?host=8.8.8.8
-```
+POST /api/targets
+Content-Type: application/json
 
-Example response:
-
-```json
 {
-  "host": "8.8.8.8",
-  "reachable": true,
-  "latency_ms": 25.0
+  "name": "Home Router",
+  "address": "192.168.1.1"
 }
 ```
 
-Latency values depend on actual network conditions.
+**Example: scan a permitted local subnet**
+
+```http
+POST /api/network/discover
+Content-Type: application/json
+
+{
+  "network": "192.168.1.0/24"
+}
+```
+
+Only scan a subnet actually associated with one of your active local interfaces. Network discovery currently uses ICMP reachability; it is not ARP-based device identification.
+
+## Understanding monitoring results
+
+### Device status
+
+The dashboard uses the most recent stored result for a target. If no result exists, the API fails, or the last measurement is stale, the device cannot be confidently described as online or offline. A recent failed ICMP check indicates **no ICMP response**, which does not necessarily mean every service on the host is unavailable.
+
+### Incident lifecycle
+
+```text
+3 consecutive recorded ping failures (each gap <= 30s)
+                         |
+                         v
+                    Incident OPEN
+                         |
+                 Successful ping
+                         |
+                         v
+                  Incident RESOLVED
+```
+
+Incident duration is measured from the **incident opening timestamp**, not necessarily from the first instant of an actual network outage. A stopped worker does not currently have a heartbeat or independent service-health state.
+
+### Check success rate vs. coverage
+
+- **Check Success Rate** = successful recorded checks / total recorded checks in the selected time window.
+- **Measurement Coverage** = portion of the selected time window supported by consecutive observations separated by no more than 30 seconds.
+- **Unknown Time** = time not covered by those observation intervals.
+
+A 100% check success rate does **not** imply 100% uptime across the whole time window. Likewise, coverage is an estimate based on stored measurements, not a service-level agreement (SLA) guarantee.
+
+## Project structure
+
+```text
+NetPulse/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                    # FastAPI routes
+│   │   ├── database.py                # SQLite data and incident lifecycle
+│   │   └── monitoring/
+│   │       ├── availability.py        # Check and coverage analytics
+│   │       ├── discovery.py           # Private subnet host discovery
+│   │       ├── network.py             # Local network interfaces
+│   │       ├── ping.py                # ICMP and latency parsing
+│   │       ├── scheduler.py           # Periodic monitoring orchestration
+│   │       └── worker.py              # Independent monitoring process
+│   ├── data/                          # Local database (ignored by Git)
+│   └── tests/                         # Backend tests
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── App.css
+│   │   └── components/
+│   │       ├── AvailabilityAnalytics.tsx
+│   │       ├── IncidentsPanel.tsx
+│   │       ├── LatencyHistory.tsx
+│   │       ├── NetworkDiscovery.tsx
+│   │       └── TargetStatus.tsx
+│   ├── package.json
+│   └── vite.config.ts
+└── README.md
+```
 
 ## Testing
 
-Backend tests cover API responses, ping behavior, latency parsing, database operations, and network calculations.
-
-From the `backend` directory:
+Run the backend tests from `backend/`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-The project currently has 23 passing backend tests in the local development environment.
-
-Frontend production build:
+Build and type-check the frontend from `frontend/`:
 
 ```powershell
-cd frontend
 npm.cmd run build
 ```
 
-## Development Roadmap
+Tests cover network calculations and discovery restrictions, ping parsing, target/database operations, scheduler behavior, incident transitions and stale-failure handling, API validation, incident duration, and availability calculations. New monitoring features should include regression tests.
 
-- [x] FastAPI backend initialization
-- [x] Basic ICMP monitoring
-- [x] Latency parsing
-- [x] SQLite target storage
-- [x] Target management API
-- [x] Initial React dashboard
-- [x] Local network interface detection
-- [ ] Automatic local network discovery
-- [ ] Device discovery interface
-- [ ] Periodic monitoring engine
-- [ ] Measurement history
-- [ ] Real-time dashboard updates
-- [ ] Alerts and monitoring statistics
-- [ ] SNMP monitoring
+## Development roadmap
 
-## Current Limitations
+### Completed
 
-NetPulse is still an experimental development project.
+- [x] FastAPI backend and SQLite persistence
+- [x] ICMP reachability checks and Windows latency parsing
+- [x] Target registration, listing, and deletion
+- [x] Local IPv4 interface detection
+- [x] Restricted private-network device discovery and dashboard registration
+- [x] Independent periodic monitoring worker and historical measurements
+- [x] Auto-refreshing target status and latency charts
+- [x] Incident creation, resolution, history, and duration
+- [x] Stale-failure protection for incident creation
+- [x] Availability check success rate and measurement-coverage API
+- [x] Availability analytics dashboard (1 hour / 24 hours / 7 days)
+- [x] Automated backend tests
 
-- Continuous background monitoring is not yet implemented.
-- The dashboard currently displays registered targets, not live device status.
-- Network discovery can identify interface information, but automatic host scanning is not yet implemented.
-- Ping execution and output parsing are currently Windows-oriented.
-- Authentication and access control are not yet implemented.
+### Next priorities — monitoring reliability
 
-Use network monitoring and discovery functionality only on networks you own or are authorized to manage. The development server is intended for local use.
+- [ ] **Worker heartbeat and health status** (distinguish worker outages from target outages)
+- [ ] **Concurrent monitoring with controlled limits** for larger target sets
+- [ ] Monitoring session awareness and better outage/unknown-time semantics
+- [ ] More robust scheduling, error reporting, and performance testing
 
-## Project Goals
+### Planned — deeper network observability
 
-NetPulse is being developed to gain practical experience in network programming, API development, database design, automated testing, and frontend engineering.
+- [ ] TCP port and service reachability monitoring
+- [ ] Packet loss and jitter statistics
+- [ ] SNMP monitoring (device/interface metrics)
+- [ ] ARP-assisted host identification and discovery improvements
+- [ ] Incident notifications, recovery notifications, and alert suppression
+- [ ] Retention policies, reporting, and longer-term trend analysis
+- [ ] Additional operating system support
+- [ ] Authentication, authorization, and deployment hardening
 
-The long-term goal is to build an extensible monitoring application that provides useful insights into network availability and performance.
+## Current limitations and security
+
+- **Windows-oriented:** ICMP execution and latency parsing currently depend on Windows `ping` behavior.
+- **Agentless and ICMP-based:** An unanswered ping does not prove a device is powered off or all services are unreachable.
+- **Sequential periodic checks:** Monitoring targets are currently checked one after another; a large set of targets can lengthen the cycle.
+- **No worker heartbeat:** `/api/health` checks the API, not the background monitoring worker.
+- **No notification delivery:** Incidents appear in the dashboard but do not send email, webhook, or other alerts yet.
+- **No access controls:** The application has no login, role-based authorization, or secured multi-user deployment setup.
+- **Development only:** The built-in development servers are not intended to be directly exposed to untrusted networks or the public internet.
+- **Local data:** SQLite data is stored locally and excluded from version control. Deleting a monitored target also deletes its measurement and incident history.
+
+Only scan or monitor networks and devices that you own or have explicit authorization to access.
+
+## Project purpose
+
+NetPulse is being developed as a hands-on project combining network engineering, backend and frontend development, persistence, testing, and monitoring-system design. The longer-term goal is an extensible self-hosted platform for small-network observability.
 
 ---
 
-**Built as a personal learning and software engineering project.**
+**NetPulse — built for learning, experimentation, and practical network monitoring.**
